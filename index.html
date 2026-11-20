@@ -50,6 +50,9 @@
   .options { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin: 10px 0; }
   .options button { font-size: 34px; min-width: 80px; background: #ffd166; color: #2b2d42; margin: 0; }
   .options.words button { font-size: 30px; min-width: 150px; }
+  .options.niq button { font-size: 50px; min-width: 96px; padding: 4px 18px 22px; line-height: 1.2; }
+  .target { color: #ef476f; }
+  .menu-grid button:disabled small { opacity: 1; }
   .options button.right { background: #06d6a0; color: #fff; }
   .options button.wrong { background: #ef476f; color: #fff; }
   .slots, .tiles { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; margin: 14px 0; direction: rtl; }
@@ -115,49 +118,98 @@ function shuffle(arr) {
 }
 function isLetter(c) { return c !== ' '; }
 
-// כתיב שגוי שנראה סביר
-function misspellings(word) {
-  const out = new Set();
-  const a = [...word];
-  a.forEach((c, i) => {
-    if (!isLetter(c)) return;
-    (CONFUSE[base(c)] || []).forEach(r => {
-      const b = a.slice(); b[i] = r; out.add(fixFinals(b.join('')));
+/* ---------- ניקוד ---------- */
+// כל מילה נשמרת כרשימת "אשכולות": אות + סימני הניקוד שלה
+const VOWEL_RE = /[ֱ-ׇֻ]/;            // תנועות (בלי שווא)
+const MARK_RE = /[֑-ׇ]/;
+const VOWEL_GROUP = {
+  'ַ': 'a', 'ָ': 'a', 'ֲ': 'a',
+  'ֵ': 'e', 'ֶ': 'e', 'ֱ': 'e',
+  'ִ': 'i',
+  'ֹ': 'o', 'ֺ': 'o', 'ֳ': 'o', 'ׇ': 'o',
+  'ֻ': 'u',
+};
+const VOWEL_REP = { a: 'ָ', e: 'ֶ', i: 'ִ', o: 'ֹ', u: 'ֻ' }; // קמץ, סגול, חיריק, חולם, קובוץ
+let showNiqqud = true;
+try { showNiqqud = localStorage.getItem('dictation-niqqud') !== 'off'; } catch (e) {}
+
+function fixFinalsC(arr) {
+  return arr.map((x, i) => {
+    let c = base(x.c);
+    const end = i === arr.length - 1 || arr[i + 1].c === ' ';
+    if (c !== ' ' && end && FINAL[c]) c = FINAL[c];
+    return { c, m: x.m };
+  });
+}
+function toClusters(s) {
+  const out = [];
+  for (const ch of s.replace(/\s+/g, ' ').trim()) {
+    if (/[א-ת ]/.test(ch)) out.push({ c: ch, m: '' });
+    else if (MARK_RE.test(ch) && out.length && out[out.length - 1].c !== ' ') out[out.length - 1].m += ch;
+  }
+  return fixFinalsC(out);
+}
+function render(cl, marks = showNiqqud) { return cl.map(x => x.c + (marks ? x.m : '')).join(''); }
+function lettersOf(cl) { return cl.map(x => x.c).join(''); }
+function shown(w) { return render(w.cl); }
+function vowelOf(m) { const r = m.match(VOWEL_RE); return r ? r[0] : null; }
+function hasNiqqud(w) { return w.cl.some(x => x.c !== 'ו' && vowelOf(x.m)); }
+const pick = a => a[Math.floor(Math.random() * a.length)];
+
+// כתיב שגוי שנראה סביר (שומר על הניקוד של המילה)
+function misspellings(cl) {
+  const word = lettersOf(cl);
+  const out = new Map();
+  const add = b => { const f = fixFinalsC(b); const k = lettersOf(f); if (k !== word && !out.has(k)) out.set(k, f); };
+  cl.forEach((x, i) => {
+    if (x.c === ' ') return;
+    (CONFUSE[base(x.c)] || []).forEach(r => {
+      let m = r === 'ש' ? x.m : x.m.replace(/[ׁׂ]/g, '');
+      if ('אהחעו'.includes(r)) m = m.replace(/ּ/g, '');
+      const b = cl.slice(); b[i] = { c: r, m }; add(b);
     });
   });
   // כתיב מלא / חסר: הוספה או השמטה של ו / י
-  a.forEach((c, i) => {
-    if (i > 0 && (c === 'ו' || c === 'י') && i < a.length - 1) {
-      const b = a.slice(); b.splice(i, 1); out.add(fixFinals(b.join('')));
-    }
-    if (i > 0 && i < a.length && isLetter(c) && isLetter(a[i - 1])) {
-      ['ו', 'י'].forEach(v => { if (a[i - 1] !== v && c !== v) { const b = a.slice(); b.splice(i, 0, v); out.add(fixFinals(b.join(''))); } });
+  cl.forEach((x, i) => {
+    if (i > 0 && (x.c === 'ו' || x.c === 'י') && i < cl.length - 1) { const b = cl.slice(); b.splice(i, 1); add(b); }
+    if (i > 0 && x.c !== ' ' && cl[i - 1].c !== ' ') {
+      ['ו', 'י'].forEach(v => { if (cl[i - 1].c !== v && x.c !== v) { const b = cl.slice(); b.splice(i, 0, { c: v, m: '' }); add(b); } });
     }
   });
-  out.delete(word);
   // מעדיפים החלפת אותיות דומות (אותו אורך) על פני הוספה או השמטה של ו/י
-  const all = [...out];
-  const list = shuffle(all.filter(x => x.length === word.length)).concat(shuffle(all.filter(x => x.length !== word.length)));
-  if (list.length === 0 && a.length > 1) {
-    const b = a.slice(); [b[0], b[1]] = [b[1], b[0]]; const s = fixFinals(b.join('')); if (s !== word) list.push(s);
+  const all = [...out.values()];
+  const list = shuffle(all.filter(x => x.length === cl.length)).concat(shuffle(all.filter(x => x.length !== cl.length)));
+  if (list.length === 0 && cl.length > 1) {
+    const b = cl.slice(); [b[0], b[1]] = [b[1], b[0]]; const f = fixFinalsC(b); if (lettersOf(f) !== word) list.push(f);
   }
   return list;
 }
 
 // תרגיל אות חסרה
-function missingLetter(word) {
-  const a = [...word];
-  const idxs = a.map((c, i) => i).filter(i => isLetter(a[i]));
-  const good = idxs.filter(i => CONFUSE[base(a[i])]);
-  const pos = (good.length ? good : idxs)[Math.floor(Math.random() * (good.length ? good : idxs).length)];
-  const correct = a[pos];
-  const isEnd = pos === a.length - 1 || a[pos + 1] === ' ';
+function missingLetter(cl) {
+  const idxs = cl.map((x, i) => i).filter(i => cl[i].c !== ' ');
+  const good = idxs.filter(i => CONFUSE[base(cl[i].c)]);
+  const pos = pick(good.length ? good : idxs);
+  const correct = cl[pos].c;
+  const isEnd = pos === cl.length - 1 || cl[pos + 1].c === ' ';
   const form = c => (isEnd && FINAL[c]) ? FINAL[c] : c;
   const opts = new Set([correct]);
   (CONFUSE[base(correct)] || []).forEach(c => opts.add(form(c)));
   for (const c of shuffle(LETTERS)) { if (opts.size >= 4) break; opts.add(form(c)); }
-  const display = a.map((c, i) => i === pos ? '_' : c).join('');
+  const display = esc(render(cl.slice(0, pos))) + '<span class="target">_</span>' + esc(render(cl.slice(pos + 1)));
   return { display, correct, options: shuffle([...opts].slice(0, 4)) };
+}
+
+// תרגיל ניקוד חסר
+function niqqudTask(cl) {
+  const pool = cl.map((x, i) => i).filter(i => cl[i].c !== 'ו' && vowelOf(cl[i].m));
+  const pos = pick(pool);
+  const x = cl[pos]; const v = vowelOf(x.m);
+  const rest = x.m.replace(new RegExp(VOWEL_RE.source, 'g'), ''); // דגש / נקודת שׁ
+  const others = shuffle(Object.keys(VOWEL_REP).filter(g => g !== VOWEL_GROUP[v])).slice(0, 3).map(g => VOWEL_REP[g]);
+  const options = shuffle([v, ...others]).map(o => ({ face: x.c + rest + o, ok: o === v }));
+  const display = esc(render(cl.slice(0, pos), true)) + `<span class="target">${esc(x.c + rest)}</span>` + esc(render(cl.slice(pos + 1), true));
+  return { display, options };
 }
 
 /* ---------- קול ---------- */
@@ -188,8 +240,9 @@ const TYPES = {
   missing: { name: 'אות חסרה', icon: '🔤', desc: 'איזו אות חסרה?' },
   scramble: { name: 'סידור אותיות', icon: '🧩', desc: 'מסדרים את המילה' },
   choose: { name: 'מה הכתיב הנכון?', icon: '✅', desc: 'בוחרים את המילה הנכונה' },
+  niqqud: { name: 'איזה ניקוד?', icon: '🔵', desc: 'משלימים את הניקוד החסר' },
 };
-let words = [];       // [{orig, plain}]
+let words = [];       // [{orig, plain, cl}]
 let queue = [];       // [{w, type}]
 let idx = 0, score = 0, attempts = 0, mistakes = [], locked = false;
 
@@ -198,7 +251,7 @@ function parseWords(text) {
   const seen = new Set(); const res = [];
   text.split(/[\n,،;]+/).forEach(raw => {
     const orig = raw.trim(); const plain = fixFinals(cleanWord(orig));
-    if (plain && !seen.has(plain)) { seen.add(plain); res.push({ orig: orig.replace(/[^֑-ׇא-ת ]/g, '').trim(), plain }); }
+    if (plain && !seen.has(plain)) { seen.add(plain); const o = orig.replace(/[^֑-ׇא-ת ]/g, '').trim(); res.push({ orig: o, plain, cl: toClusters(o) }); }
   });
   return res;
 }
@@ -223,9 +276,9 @@ function showSetup() {
       <button class="green" id="save">שמירה והתחלה ▶</button>
       <button class="secondary" id="sample">רשימה לדוגמה</button>
     </div>
-    <p class="note">טיפ: אפשר להוסיף ניקוד. הוא עוזר לקריאה הקולית של המילים, ולא נדרש בתשובות.</p>`;
+    <p class="note">טיפ: כדאי לכתוב את המילים עם ניקוד. הניקוד יוצג בתרגילים, יעזור להקראה הקולית ויאפשר את תרגיל הניקוד. בתשובות לא צריך להקליד ניקוד.</p>`;
   document.getElementById('sample').onclick = () => {
-    document.getElementById('wl').value = 'שולחן\nתפוח\nכיתה\nחבר\nטלפון\nספר\nעכבר\nקשת\nאוטובוס\nשמש';
+    document.getElementById('wl').value = 'שׁוּלְחָן\nתַּפּוּחַ\nכִּיתָּה\nחָבֵר\nטֶלֶפוֹן\nסֵפֶר\nעַכְבָּר\nקֶשֶׁת\nאוֹטוֹבּוּס\nשֶׁמֶשׁ';
   };
   document.getElementById('save').onclick = () => {
     const list = parseWords(document.getElementById('wl').value);
@@ -243,19 +296,25 @@ function alertBox(msg) {
 }
 
 function showMenu() {
+  const anyNiq = words.some(hasNiqqud);
   app.innerHTML = `
     <h1>מתאמנים להכתבה ✏️</h1>
     <p class="sub">יש ${words.length} מילים ברשימה. במה נתאמן?</p>
     <div class="menu-grid">
-      ${Object.entries(TYPES).map(([k, t]) => `<button data-t="${k}">${t.icon} ${t.name}<small>${t.desc}</small></button>`).join('')}
+      ${Object.entries(TYPES).map(([k, t]) => (k === 'niqqud' && !anyNiq)
+        ? `<button disabled title="צריך מילים מנוקדות">${t.icon} ${t.name}<small>צריך לכתוב מילים עם ניקוד</small></button>`
+        : `<button data-t="${k}">${t.icon} ${t.name}<small>${t.desc}</small></button>`).join('')}
       <button class="wide" data-t="mixed">🎲 תרגול מעורב<small>כל סוגי התרגילים יחד</small></button>
     </div>
     <button class="secondary" id="edit">✏️ עריכת המילים</button>
     <button class="secondary" id="share">🔗 שיתוף הרשימה</button>
+    ${anyNiq ? `<button class="secondary" id="niqtoggle">${showNiqqud ? 'הסתרת הניקוד' : 'הצגת הניקוד'}</button>` : ''}
     <div class="fb good" id="msg"></div>
     ${heVoice ? '' : '<p class="note">לא נמצא קול בעברית במכשיר הזה. בתרגיל ההכתבה אפשר להציץ במילה לרגע, או שמבוגר יקרא אותה בקול.</p>'}`;
   app.querySelectorAll('[data-t]').forEach(b => b.onclick = () => startRound(words, b.dataset.t));
   document.getElementById('edit').onclick = showSetup;
+  const nt = document.getElementById('niqtoggle');
+  if (nt) nt.onclick = () => { showNiqqud = !showNiqqud; try { localStorage.setItem('dictation-niqqud', showNiqqud ? 'on' : 'off'); } catch (e) {} showMenu(); };
   document.getElementById('share').onclick = async () => {
     const url = location.origin + location.pathname + '#w=' + encodeURIComponent(words.map(w => w.orig).join(','));
     const el = document.getElementById('msg');
@@ -265,8 +324,9 @@ function showMenu() {
 }
 
 function startRound(list, type) {
-  const types = Object.keys(TYPES);
-  queue = shuffle(list).map(w => ({ w, type: type === 'mixed' ? types[Math.floor(Math.random() * types.length)] : type }));
+  if (type === 'niqqud') list = list.filter(hasNiqqud);
+  const typesFor = w => Object.keys(TYPES).filter(t => t !== 'niqqud' || hasNiqqud(w));
+  queue = shuffle(list).map(w => ({ w, type: type === 'mixed' ? pick(typesFor(w)) : type }));
   idx = 0; score = 0; mistakes = [];
   showItem();
 }
@@ -289,28 +349,36 @@ function showItem() {
       <input class="answer" id="ans" autocomplete="off" autocorrect="off" spellcheck="false" lang="he" dir="rtl">
       <div><button class="green" id="check">בדיקה</button></div>`;
   } else if (type === 'missing') {
-    const m = missingLetter(w.plain); queue[idx].data = m;
+    const m = missingLetter(w.cl); queue[idx].data = m;
     body = `
       <h2>🔤 איזו אות חסרה?</h2>
-      <div class="word-big">${esc(m.display).replace('_', '<span style="color:#ef476f">_</span>')}</div>
+      <div class="word-big">${m.display}</div>
       ${heVoice ? '<button class="secondary" id="play">🔊 שמעו את המילה</button>' : ''}
-      <div class="options" id="opts">${m.options.map(o => `<button data-v="${o}">${o}</button>`).join('')}</div>`;
+      <div class="options" id="opts">${m.options.map(o => `<button data-ok="${o === m.correct ? 1 : 0}">${o}</button>`).join('')}</div>`;
   } else if (type === 'scramble') {
-    const letters = [...w.plain].filter(isLetter);
+    const tl = w.cl.filter(x => x.c !== ' ');
+    const letters = tl.map(x => x.c); const faces = tl.map(x => render([x]));
     let order = shuffle(letters.map((c, i) => i));
     if (letters.length > 1) { let tries = 0; while (order.map(i => letters[i]).join('') === letters.join('') && tries++ < 10) order = shuffle(order); }
-    queue[idx].data = { letters, order, filled: [] };
+    queue[idx].data = { letters, faces, order, filled: [] };
     body = `
       <h2>🧩 סדרו את האותיות למילה</h2>
       ${heVoice ? '<button class="secondary" id="play">🔊 שמעו את המילה</button>' : ''}
       <div class="slots" id="slots"></div>
       <div class="tiles" id="tiles"></div>`;
   } else if (type === 'choose') {
-    const opts = shuffle([w.plain, ...misspellings(w.plain).slice(0, 2)]);
+    const opts = shuffle([{ face: shown(w), ok: true }, ...misspellings(w.cl).slice(0, 2).map(c => ({ face: render(c), ok: false }))]);
     body = `
       <h2>✅ מה הכתיב הנכון?</h2>
       ${heVoice ? '<button class="secondary" id="play">🔊 שמעו את המילה</button>' : ''}
-      <div class="options words" id="opts">${opts.map(o => `<button data-v="${o}">${o}</button>`).join('')}</div>`;
+      <div class="options words" id="opts">${opts.map(o => `<button data-ok="${o.ok ? 1 : 0}">${esc(o.face)}</button>`).join('')}</div>`;
+  } else if (type === 'niqqud') {
+    const n = niqqudTask(w.cl);
+    body = `
+      <h2>🔵 איזה ניקוד חסר באות האדומה?</h2>
+      <div class="word-big">${n.display}</div>
+      ${heVoice ? '<button class="secondary" id="play">🔊 שמעו את המילה</button>' : ''}
+      <div class="options niq" id="opts">${n.options.map(o => `<button data-ok="${o.ok ? 1 : 0}">${esc(o.face)}</button>`).join('')}</div>`;
   }
   app.innerHTML = header() + body + `<div class="fb" id="fb"></div><div id="next"></div>`;
   document.getElementById('quit').onclick = showMenu;
@@ -318,7 +386,7 @@ function showItem() {
   const play = document.getElementById('play');
   if (play) play.onclick = () => {
     if (heVoice) speak(w.orig || w.plain);
-    else { const p = document.getElementById('peek'); p.textContent = w.plain; setTimeout(() => { p.textContent = ''; }, 2500); }
+    else { const p = document.getElementById('peek'); if (!p) return; p.textContent = shown(w); setTimeout(() => { p.textContent = ''; }, 2500); }
   };
   if (heVoice && (type === 'dictation')) setTimeout(() => speak(w.orig || w.plain), 300);
 
@@ -334,17 +402,17 @@ function showItem() {
     document.getElementById('check').onclick = check;
     ans.onkeydown = e => { if (e.key === 'Enter') check(); };
   }
-  if (type === 'missing' || type === 'choose') {
-    const correct = type === 'missing' ? queue[idx].data.correct : w.plain;
+  if (type === 'missing' || type === 'choose' || type === 'niqqud') {
     document.querySelectorAll('#opts button').forEach(b => b.onclick = () => {
       if (locked) return;
-      if (b.dataset.v === correct) {
+      if (b.dataset.ok === '1') {
         b.classList.add('right');
-        if (type === 'missing') document.querySelector('.word-big').textContent = w.plain;
+        if (type === 'missing') document.querySelector('.word-big').textContent = shown(w);
+        if (type === 'niqqud') document.querySelector('.word-big').textContent = render(w.cl, true);
         good();
       } else {
         b.classList.add('wrong'); b.disabled = true;
-        bad(() => {}, () => document.querySelectorAll('#opts button').forEach(x => { if (x.dataset.v === correct) x.classList.add('right'); }));
+        bad(() => {}, () => document.querySelectorAll('#opts button[data-ok="1"]').forEach(x => x.classList.add('right')));
       }
     });
   }
@@ -358,9 +426,9 @@ function renderScramble() {
   slots.innerHTML = [...w.plain].map(c => {
     if (c === ' ') return '<div class="slot space"></div>';
     const k = li++; const f = d.filled[k];
-    return `<div class="slot ${f !== undefined ? 'filled' : ''}" data-k="${k}">${f !== undefined ? d.letters[f] : ''}</div>`;
+    return `<div class="slot ${f !== undefined ? 'filled' : ''}" data-k="${k}">${f !== undefined ? esc(d.faces[f]) : ''}</div>`;
   }).join('');
-  tiles.innerHTML = d.order.map(i => `<div class="tile ${d.filled.includes(i) ? 'used' : ''}" data-i="${i}">${d.letters[i]}</div>`).join('');
+  tiles.innerHTML = d.order.map(i => `<div class="tile ${d.filled.includes(i) ? 'used' : ''}" data-i="${i}">${esc(d.faces[i])}</div>`).join('');
   tiles.querySelectorAll('.tile').forEach(t => t.onclick = () => {
     if (locked) return;
     const i = +t.dataset.i; if (d.filled.includes(i)) return;
@@ -400,7 +468,8 @@ function bad(retry, reveal) {
   const w = queue[idx].w;
   if (!mistakes.includes(w)) mistakes.push(w);
   if (reveal) reveal();
-  fb.innerHTML = `הכתיב הנכון: <span style="color:#118ab2;font-size:34px">${esc(w.plain)}</span>`;
+  const niq = queue[idx].type === 'niqqud';
+  fb.innerHTML = `${niq ? 'הניקוד הנכון' : 'הכתיב הנכון'}: <span style="color:#118ab2;font-size:34px">${esc(niq ? render(w.cl, true) : shown(w))}</span>`;
   nextButton();
 }
 
@@ -419,7 +488,7 @@ function showSummary() {
     <h1>${msg}</h1>
     <div class="stars">${stars}</div>
     <p class="sub">צדקתם בניסיון הראשון ב־${score} מתוך ${total} מילים</p>
-    ${mistakes.length ? `<h2>מילים שכדאי לתרגל שוב:</h2><div class="mistakes">${mistakes.map(w => `<span>${esc(w.plain)}</span>`).join('')}</div>` : ''}
+    ${mistakes.length ? `<h2>מילים שכדאי לתרגל שוב:</h2><div class="mistakes">${mistakes.map(w => `<span>${esc(shown(w))}</span>`).join('')}</div>` : ''}
     <div>
       ${mistakes.length ? '<button class="pink" id="again">🔁 תרגול המילים הקשות</button>' : ''}
       <button class="green" id="menu">חזרה לתפריט</button>
