@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>מתאמנים להכתבה</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh;
+    font-family: "Arial Hebrew", "Rubik", "Segoe UI", Arial, sans-serif;
+    background: linear-gradient(160deg, #fff6d9 0%, #ffe3ec 50%, #dff3ff 100%);
+    color: #2b2d42; display: flex; justify-content: center; align-items: flex-start;
+    padding: 24px 12px;
+  }
+  .card {
+    background: #fff; width: 100%; max-width: 640px; border-radius: 28px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.08); padding: 28px 24px; text-align: center;
+  }
+  h1 { margin: 0 0 6px; font-size: 34px; color: #ef476f; }
+  h2 { margin: 0 0 16px; font-size: 26px; }
+  p.sub { margin: 0 0 20px; color: #666; font-size: 18px; }
+  textarea {
+    width: 100%; min-height: 200px; font-size: 22px; padding: 14px; border-radius: 16px;
+    border: 3px solid #ffd166; font-family: inherit; resize: vertical; line-height: 1.6;
+  }
+  textarea:focus, input:focus { outline: none; border-color: #06d6a0; }
+  button {
+    font-family: inherit; font-size: 20px; border: none; border-radius: 16px; cursor: pointer;
+    padding: 12px 20px; margin: 6px; background: #118ab2; color: #fff; transition: transform .1s;
+  }
+  button:active { transform: scale(.96); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.secondary { background: #e9ecef; color: #333; }
+  button.green { background: #06d6a0; }
+  button.pink { background: #ef476f; }
+  .menu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 18px 0; }
+  .menu-grid button { margin: 0; padding: 20px 10px; font-size: 21px; line-height: 1.3; }
+  .menu-grid button small { display: block; font-size: 14px; opacity: .85; margin-top: 4px; }
+  .menu-grid .wide { grid-column: span 2; background: #ef476f; }
+  .progress { height: 14px; background: #eee; border-radius: 10px; overflow: hidden; margin-bottom: 18px; }
+  .progress div { height: 100%; background: #06d6a0; transition: width .3s; }
+  .prompt { font-size: 24px; margin-bottom: 16px; }
+  .word-big { font-size: 52px; font-weight: bold; letter-spacing: 4px; margin: 14px 0; min-height: 70px; }
+  .peek { font-size: 52px; font-weight: bold; color: #118ab2; min-height: 70px; margin: 10px 0; }
+  input.answer {
+    font-size: 36px; padding: 10px 14px; width: 100%; max-width: 360px; text-align: center;
+    border: 3px solid #ffd166; border-radius: 16px; font-family: inherit; margin: 10px 0;
+  }
+  .options { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin: 10px 0; }
+  .options button { font-size: 34px; min-width: 80px; background: #ffd166; color: #2b2d42; margin: 0; }
+  .options.words button { font-size: 30px; min-width: 150px; }
+  .options button.right { background: #06d6a0; color: #fff; }
+  .options button.wrong { background: #ef476f; color: #fff; }
+  .slots, .tiles { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; margin: 14px 0; direction: rtl; }
+  .slot, .tile {
+    width: 58px; height: 64px; font-size: 36px; display: flex; align-items: center; justify-content: center;
+    border-radius: 14px; font-weight: bold; user-select: none;
+  }
+  .slot { border: 3px dashed #bbb; background: #fafafa; cursor: pointer; }
+  .slot.filled { border-style: solid; border-color: #118ab2; background: #e7f5fb; }
+  .slot.space { border: none; background: transparent; width: 24px; cursor: default; }
+  .tile { background: #ffd166; cursor: pointer; box-shadow: 0 3px 0 #e0b04a; }
+  .tile.used { visibility: hidden; }
+  .fb { font-size: 26px; min-height: 40px; margin: 12px 0; font-weight: bold; }
+  .fb.good { color: #06a77d; }
+  .fb.bad { color: #ef476f; }
+  .stars { font-size: 46px; margin: 10px 0; }
+  .mistakes { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 12px 0; }
+  .mistakes span { background: #ffe3ec; padding: 6px 14px; border-radius: 12px; font-size: 24px; }
+  .note { font-size: 15px; color: #888; margin-top: 10px; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 18px; }
+  .topbar button { font-size: 16px; padding: 6px 12px; margin: 0; }
+  .hidden { display: none !important; }
+  @media (max-width: 420px) {
+    .word-big, .peek { font-size: 40px; }
+    .slot, .tile { width: 46px; height: 54px; font-size: 30px; }
+  }
+</style>
+</head>
+<body>
+<div class="card" id="app"></div>
+
+<script>
+/* ---------- עזרי מילים (ללא DOM) ---------- */
+const FINAL = { 'כ': 'ך', 'מ': 'ם', 'נ': 'ן', 'פ': 'ף', 'צ': 'ץ' };
+const UNFINAL = { 'ך': 'כ', 'ם': 'מ', 'ן': 'נ', 'ף': 'פ', 'ץ': 'צ' };
+// אותיות שקל להתבלבל ביניהן בהכתבה
+const CONFUSE = {
+  'ט': ['ת'], 'ת': ['ט'],
+  'כ': ['ח', 'ק'], 'ח': ['כ'], 'ק': ['כ'],
+  'א': ['ע', 'ה'], 'ע': ['א'], 'ה': ['א'],
+  'ס': ['ש'], 'ש': ['ס'],
+  'ב': ['ו'],
+  'צ': ['ס'], 'ז': ['צ'], 'ג': ['ק'], 'ד': ['ט'],
+};
+const LETTERS = 'אבגדהוזחטיכלמנסעפצקרשת'.split('');
+
+function stripNiqqud(s) { return s.replace(/[֑-ׇ]/g, ''); }
+function cleanWord(s) { return stripNiqqud(s).replace(/[^א-ת ]/g, '').replace(/\s+/g, ' ').trim(); }
+function base(c) { return UNFINAL[c] || c; }
+// אותיות סופיות רק בסוף מילה
+function fixFinals(w) {
+  return w.split(' ').map(part => {
+    const a = [...part].map(base);
+    const l = a.length - 1;
+    if (l >= 0 && FINAL[a[l]]) a[l] = FINAL[a[l]];
+    return a.join('');
+  }).join(' ');
+}
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+function isLetter(c) { return c !== ' '; }
+
+// כתיב שגוי שנראה סביר
+function misspellings(word) {
+  const out = new Set();
+  const a = [...word];
+  a.forEach((c, i) => {
+    if (!isLetter(c)) return;
+    (CONFUSE[base(c)] || []).forEach(r => {
+      const b = a.slice(); b[i] = r; out.add(fixFinals(b.join('')));
+    });
+  });
+  // כתיב מלא / חסר: הוספה או השמטה של ו / י
+  a.forEach((c, i) => {
+    if (i > 0 && (c === 'ו' || c === 'י') && i < a.length - 1) {
+      const b = a.slice(); b.splice(i, 1); out.add(fixFinals(b.join('')));
+    }
+    if (i > 0 && i < a.length && isLetter(c) && isLetter(a[i - 1])) {
+      ['ו', 'י'].forEach(v => { if (a[i - 1] !== v && c !== v) { const b = a.slice(); b.splice(i, 0, v); out.add(fixFinals(b.join(''))); } });
+    }
+  });
+  out.delete(word);
+  // מעדיפים החלפת אותיות דומות (אותו אורך) על פני הוספה או השמטה של ו/י
+  const all = [...out];
+  const list = shuffle(all.filter(x => x.length === word.length)).concat(shuffle(all.filter(x => x.length !== word.length)));
+  if (list.length === 0 && a.length > 1) {
+    const b = a.slice(); [b[0], b[1]] = [b[1], b[0]]; const s = fixFinals(b.join('')); if (s !== word) list.push(s);
+  }
+  return list;
+}
+
+// תרגיל אות חסרה
+function missingLetter(word) {
+  const a = [...word];
+  const idxs = a.map((c, i) => i).filter(i => isLetter(a[i]));
+  const good = idxs.filter(i => CONFUSE[base(a[i])]);
+  const pos = (good.length ? good : idxs)[Math.floor(Math.random() * (good.length ? good : idxs).length)];
+  const correct = a[pos];
+  const isEnd = pos === a.length - 1 || a[pos + 1] === ' ';
+  const form = c => (isEnd && FINAL[c]) ? FINAL[c] : c;
+  const opts = new Set([correct]);
+  (CONFUSE[base(correct)] || []).forEach(c => opts.add(form(c)));
+  for (const c of shuffle(LETTERS)) { if (opts.size >= 4) break; opts.add(form(c)); }
+  const display = a.map((c, i) => i === pos ? '_' : c).join('');
+  return { display, correct, options: shuffle([...opts].slice(0, 4)) };
+}
+
+/* ---------- קול ---------- */
+let heVoice = null;
+function loadVoices() {
+  try { heVoice = speechSynthesis.getVoices().find(v => (v.lang || '').toLowerCase().startsWith('he')) || null; } catch (e) {}
+}
+if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+  loadVoices();
+  speechSynthesis.onvoiceschanged = loadVoices;
+}
+function speak(text) {
+  if (!heVoice) return false;
+  try {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.voice = heVoice; u.lang = heVoice.lang; u.rate = 0.75;
+    speechSynthesis.speak(u);
+    return true;
+  } catch (e) { return false; }
+}
+
+/* ---------- מצב ---------- */
+const STORE_KEY = 'dictation-words-v1';
+const PRAISE = ['כל הכבוד! 🌟', 'מצוין! 🎉', 'יופי! 👏', 'אלופים! 🏆', 'נהדר! 💪', 'מעולה! ⭐'];
+const TYPES = {
+  dictation: { name: 'הכתבה', icon: '✏️', desc: 'שומעים וכותבים' },
+  missing: { name: 'אות חסרה', icon: '🔤', desc: 'איזו אות חסרה?' },
+  scramble: { name: 'סידור אותיות', icon: '🧩', desc: 'מסדרים את המילה' },
+  choose: { name: 'מה הכתיב הנכון?', icon: '✅', desc: 'בוחרים את המילה הנכונה' },
+};
+let words = [];       // [{orig, plain}]
+let queue = [];       // [{w, type}]
+let idx = 0, score = 0, attempts = 0, mistakes = [], locked = false;
+
+function saveWords() { try { localStorage.setItem(STORE_KEY, JSON.stringify(words.map(w => w.orig))); } catch (e) {} }
+function parseWords(text) {
+  const seen = new Set(); const res = [];
+  text.split(/[\n,،;]+/).forEach(raw => {
+    const orig = raw.trim(); const plain = fixFinals(cleanWord(orig));
+    if (plain && !seen.has(plain)) { seen.add(plain); res.push({ orig: orig.replace(/[^֑-ׇא-ת ]/g, '').trim(), plain }); }
+  });
+  return res;
+}
+function initWords() {
+  try {
+    const m = location.hash.match(/w=([^&]+)/);
+    if (m) { const list = parseWords(decodeURIComponent(m[1])); if (list.length) { words = list; saveWords(); return; } }
+  } catch (e) {}
+  try { const s = JSON.parse(localStorage.getItem(STORE_KEY) || '[]'); words = parseWords(s.join('\n')); } catch (e) { words = []; }
+}
+
+/* ---------- מסכים ---------- */
+const app = document.getElementById('app');
+const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function showSetup() {
+  app.innerHTML = `
+    <h1>מתאמנים להכתבה ✏️</h1>
+    <p class="sub">כתבו את המילים להכתבה, כל מילה בשורה נפרדת (או מופרדות בפסיקים)</p>
+    <textarea id="wl" placeholder="שולחן&#10;תפוח&#10;כיתה&#10;טלפון">${esc(words.map(w => w.orig).join('\n'))}</textarea>
+    <div>
+      <button class="green" id="save">שמירה והתחלה ▶</button>
+      <button class="secondary" id="sample">רשימה לדוגמה</button>
+    </div>
+    <p class="note">טיפ: אפשר להוסיף ניקוד. הוא עוזר לקריאה הקולית של המילים, ולא נדרש בתשובות.</p>`;
+  document.getElementById('sample').onclick = () => {
+    document.getElementById('wl').value = 'שולחן\nתפוח\nכיתה\nחבר\nטלפון\nספר\nעכבר\nקשת\nאוטובוס\nשמש';
+  };
+  document.getElementById('save').onclick = () => {
+    const list = parseWords(document.getElementById('wl').value);
+    if (!list.length) { alertBox('צריך לכתוב לפחות מילה אחת 🙂'); return; }
+    words = list; saveWords();
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+    showMenu();
+  };
+}
+
+function alertBox(msg) {
+  let el = document.getElementById('msg');
+  if (!el) { el = document.createElement('div'); el.id = 'msg'; el.className = 'fb bad'; app.appendChild(el); }
+  el.textContent = msg;
+}
+
+function showMenu() {
+  app.innerHTML = `
+    <h1>מתאמנים להכתבה ✏️</h1>
+    <p class="sub">יש ${words.length} מילים ברשימה. במה נתאמן?</p>
+    <div class="menu-grid">
+      ${Object.entries(TYPES).map(([k, t]) => `<button data-t="${k}">${t.icon} ${t.name}<small>${t.desc}</small></button>`).join('')}
+      <button class="wide" data-t="mixed">🎲 תרגול מעורב<small>כל סוגי התרגילים יחד</small></button>
+    </div>
+    <button class="secondary" id="edit">✏️ עריכת המילים</button>
+    <button class="secondary" id="share">🔗 שיתוף הרשימה</button>
+    <div class="fb good" id="msg"></div>
+    ${heVoice ? '' : '<p class="note">לא נמצא קול בעברית במכשיר הזה. בתרגיל ההכתבה אפשר להציץ במילה לרגע, או שמבוגר יקרא אותה בקול.</p>'}`;
+  app.querySelectorAll('[data-t]').forEach(b => b.onclick = () => startRound(words, b.dataset.t));
+  document.getElementById('edit').onclick = showSetup;
+  document.getElementById('share').onclick = async () => {
+    const url = location.origin + location.pathname + '#w=' + encodeURIComponent(words.map(w => w.orig).join(','));
+    const el = document.getElementById('msg');
+    try { await navigator.clipboard.writeText(url); el.textContent = 'הקישור הועתק! אפשר לשלוח אותו לחברים 📋'; }
+    catch (e) { el.innerHTML = `<input class="answer" style="font-size:14px;max-width:100%" value="${esc(url)}" readonly onclick="this.select()">`; }
+  };
+}
+
+function startRound(list, type) {
+  const types = Object.keys(TYPES);
+  queue = shuffle(list).map(w => ({ w, type: type === 'mixed' ? types[Math.floor(Math.random() * types.length)] : type }));
+  idx = 0; score = 0; mistakes = [];
+  showItem();
+}
+
+function header() {
+  return `
+    <div class="topbar"><span>${idx + 1} / ${queue.length}</span><span>⭐ ${score}</span><button class="secondary" id="quit">יציאה</button></div>
+    <div class="progress"><div style="width:${(idx / queue.length) * 100}%"></div></div>`;
+}
+
+function showItem() {
+  attempts = 0; locked = false;
+  const { w, type } = queue[idx];
+  let body = '';
+  if (type === 'dictation') {
+    body = `
+      <h2>✏️ הקשיבו וכתבו את המילה</h2>
+      ${heVoice ? '<button class="pink" id="play">🔊 השמיעו שוב</button>' : '<button class="pink" id="play">👀 הציצו במילה</button>'}
+      <div class="peek" id="peek"></div>
+      <input class="answer" id="ans" autocomplete="off" autocorrect="off" spellcheck="false" lang="he" dir="rtl">
+      <div><button class="green" id="check">בדיקה</button></div>`;
+  } else if (type === 'missing') {
+    const m = missingLetter(w.plain); queue[idx].data = m;
+    body = `
+      <h2>🔤 איזו אות חסרה?</h2>
+      <div class="word-big">${esc(m.display).replace('_', '<span style="color:#ef476f">_</span>')}</div>
+      ${heVoice ? '<button class="secondary" id="play">🔊 שמעו את המילה</button>' : ''}
+      <div class="options" id="opts">${m.options.map(o => `<button data-v="${o}">${o}</button>`).join('')}</div>`;
+  } else if (type === 'scramble') {
+    const letters = [...w.plain].filter(isLetter);
+    let order = shuffle(letters.map((c, i) => i));
+    if (letters.length > 1) { let tries = 0; while (order.map(i => letters[i]).join('') === letters.join('') && tries++ < 10) order = shuffle(order); }
+    queue[idx].data = { letters, order, filled: [] };
+    body = `
+      <h2>🧩 סדרו את האותיות למילה</h2>
+      ${heVoice ? '<button class="secondary" id="play">🔊 שמעו את המילה</button>' : ''}
+      <div class="slots" id="slots"></div>
+      <div class="tiles" id="tiles"></div>`;
+  } else if (type === 'choose') {
+    const opts = shuffle([w.plain, ...misspellings(w.plain).slice(0, 2)]);
+    body = `
+      <h2>✅ מה הכתיב הנכון?</h2>
+      ${heVoice ? '<button class="secondary" id="play">🔊 שמעו את המילה</button>' : ''}
+      <div class="options words" id="opts">${opts.map(o => `<button data-v="${o}">${o}</button>`).join('')}</div>`;
+  }
+  app.innerHTML = header() + body + `<div class="fb" id="fb"></div><div id="next"></div>`;
+  document.getElementById('quit').onclick = showMenu;
+
+  const play = document.getElementById('play');
+  if (play) play.onclick = () => {
+    if (heVoice) speak(w.orig || w.plain);
+    else { const p = document.getElementById('peek'); p.textContent = w.plain; setTimeout(() => { p.textContent = ''; }, 2500); }
+  };
+  if (heVoice && (type === 'dictation')) setTimeout(() => speak(w.orig || w.plain), 300);
+
+  if (type === 'dictation') {
+    const ans = document.getElementById('ans');
+    ans.focus();
+    const check = () => {
+      if (locked) return;
+      const v = fixFinals(cleanWord(ans.value));
+      if (!v) return;
+      if (v === w.plain) good(); else bad(() => { ans.value = ''; ans.focus(); });
+    };
+    document.getElementById('check').onclick = check;
+    ans.onkeydown = e => { if (e.key === 'Enter') check(); };
+  }
+  if (type === 'missing' || type === 'choose') {
+    const correct = type === 'missing' ? queue[idx].data.correct : w.plain;
+    document.querySelectorAll('#opts button').forEach(b => b.onclick = () => {
+      if (locked) return;
+      if (b.dataset.v === correct) {
+        b.classList.add('right');
+        if (type === 'missing') document.querySelector('.word-big').textContent = w.plain;
+        good();
+      } else {
+        b.classList.add('wrong'); b.disabled = true;
+        bad(() => {}, () => document.querySelectorAll('#opts button').forEach(x => { if (x.dataset.v === correct) x.classList.add('right'); }));
+      }
+    });
+  }
+  if (type === 'scramble') renderScramble();
+}
+
+function renderScramble() {
+  const { w } = queue[idx]; const d = queue[idx].data;
+  const slots = document.getElementById('slots'); const tiles = document.getElementById('tiles');
+  let li = 0;
+  slots.innerHTML = [...w.plain].map(c => {
+    if (c === ' ') return '<div class="slot space"></div>';
+    const k = li++; const f = d.filled[k];
+    return `<div class="slot ${f !== undefined ? 'filled' : ''}" data-k="${k}">${f !== undefined ? d.letters[f] : ''}</div>`;
+  }).join('');
+  tiles.innerHTML = d.order.map(i => `<div class="tile ${d.filled.includes(i) ? 'used' : ''}" data-i="${i}">${d.letters[i]}</div>`).join('');
+  tiles.querySelectorAll('.tile').forEach(t => t.onclick = () => {
+    if (locked) return;
+    const i = +t.dataset.i; if (d.filled.includes(i)) return;
+    const empty = d.letters.findIndex((_, k) => d.filled[k] === undefined);
+    if (empty < 0) return;
+    d.filled[empty] = i;
+    renderScramble();
+    if (d.letters.every((_, k) => d.filled[k] !== undefined)) {
+      const guess = d.filled.map(f => d.letters[f]).join('');
+      if (guess === d.letters.join('')) good();
+      else bad(() => { d.filled = []; renderScramble(); }, () => { d.filled = d.letters.map((_, k) => k); renderScramble(); });
+    }
+  });
+  slots.querySelectorAll('.slot[data-k]').forEach(s => s.onclick = () => {
+    if (locked) return;
+    const k = +s.dataset.k; if (d.filled[k] === undefined) return;
+    d.filled[k] = undefined; renderScramble();
+  });
+}
+
+function good() {
+  locked = true;
+  const fb = document.getElementById('fb');
+  if (attempts === 0) score++;
+  else if (!mistakes.includes(queue[idx].w)) mistakes.push(queue[idx].w);
+  fb.className = 'fb good';
+  fb.textContent = PRAISE[Math.floor(Math.random() * PRAISE.length)];
+  nextButton();
+}
+
+function bad(retry, reveal) {
+  attempts++;
+  const fb = document.getElementById('fb');
+  fb.className = 'fb bad';
+  if (attempts < 2) { fb.textContent = 'כמעט! נסו שוב 💪'; setTimeout(retry, 700); return; }
+  locked = true;
+  const w = queue[idx].w;
+  if (!mistakes.includes(w)) mistakes.push(w);
+  if (reveal) reveal();
+  fb.innerHTML = `הכתיב הנכון: <span style="color:#118ab2;font-size:34px">${esc(w.plain)}</span>`;
+  nextButton();
+}
+
+function nextButton() {
+  const n = document.getElementById('next');
+  n.innerHTML = `<button class="green" id="nx">${idx + 1 < queue.length ? 'הבא ◀' : 'סיום 🏁'}</button>`;
+  const nx = document.getElementById('nx'); nx.focus();
+  nx.onclick = () => { idx++; idx < queue.length ? showItem() : showSummary(); };
+}
+
+function showSummary() {
+  const total = queue.length; const ratio = score / total;
+  const stars = ratio >= 0.9 ? '⭐⭐⭐' : ratio >= 0.6 ? '⭐⭐' : '⭐';
+  const msg = ratio === 1 ? 'מושלם! אתם מוכנים להכתבה! 🎉' : ratio >= 0.6 ? 'עבודה יפה מאוד! 👏' : 'התחלה טובה. עוד קצת תרגול וזה יגיע! 💪';
+  app.innerHTML = `
+    <h1>${msg}</h1>
+    <div class="stars">${stars}</div>
+    <p class="sub">צדקתם בניסיון הראשון ב־${score} מתוך ${total} מילים</p>
+    ${mistakes.length ? `<h2>מילים שכדאי לתרגל שוב:</h2><div class="mistakes">${mistakes.map(w => `<span>${esc(w.plain)}</span>`).join('')}</div>` : ''}
+    <div>
+      ${mistakes.length ? '<button class="pink" id="again">🔁 תרגול המילים הקשות</button>' : ''}
+      <button class="green" id="menu">חזרה לתפריט</button>
+    </div>`;
+  const hard = mistakes.slice();
+  if (hard.length) document.getElementById('again').onclick = () => startRound(hard, 'mixed');
+  document.getElementById('menu').onclick = showMenu;
+}
+
+/* ---------- התחלה ---------- */
+initWords();
+words.length ? showMenu() : showSetup();
+</script>
+</body>
+</html>
